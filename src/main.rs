@@ -1,7 +1,8 @@
-use std::collections::{ HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::io::{BufRead, Write};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 fn main() {
     let mut nodes: HashMap<String, Node> = HashMap::new();
@@ -37,11 +38,12 @@ struct Node {
     id: String,
     ids: HashSet<String>,
     msg_id: usize,
+    uuid: Uuid,
 }
 
 impl Node {
     fn init(id: String, ids: HashSet<String>) -> Node {
-        Node { id, ids, msg_id: 0 }
+        Node { id, ids, msg_id: 0, uuid: Uuid::new_v4() }
     }
 
     fn handle(&mut self, msg: &Msg) {
@@ -68,6 +70,18 @@ impl Node {
                 }.write();
             }
             MsgBody::InitOk(_) => {}
+            MsgBody::Generate(body) => {
+                Msg {
+                    src: self.id.clone(),
+                    dest: msg.src.clone(),
+                    body: MsgBody::GenerateOk(GenerateOk {
+                        msg_id: self.get_msg_id(),
+                        in_reply_to: body.msg_id,
+                        id: Uuid::new_v4().as_u128(),
+                    }),
+                }.write();
+            }
+            MsgBody::GenerateOk(_) => {}
         }
     }
 
@@ -95,25 +109,6 @@ impl Msg {
         io::stdout().write(reply.as_bytes()).expect("panicked while sending message");
         io::stdout().write("\n".as_bytes()).expect("panicked while sending message");
     }
-
-    // fn reply(&self, node: &Node) {
-    //     let reply: Msg;
-    //     match &self.body {
-    //         MsgBody::Echo(body) => {
-    //             reply = Msg {
-    //                 src: node.id.clone(),
-    //                 dest: self.src.clone(),
-    //                 body: MsgBody::EchoOk(EchoOk {
-    //                     msg_id: node.get_msg_id(),
-    //                     in_reply_to: body.msg_id.clone(),
-    //                     echo: body.echo.clone(),
-    //                 }),
-    //             };
-    //         }
-    //         MsgBody::Init(body) => {}
-    //         _ => {}
-    //     }
-    // }
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
@@ -127,6 +122,10 @@ enum MsgBody {
     Init(Init),
     #[serde(rename = "init_ok")]
     InitOk(InitOk),
+    #[serde(rename = "generate")]
+    Generate(Generate),
+    #[serde(rename = "generate_ok")]
+    GenerateOk(GenerateOk),
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
@@ -154,6 +153,18 @@ struct EchoOk {
     msg_id: usize,
     in_reply_to: usize,
     echo: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct Generate {
+    msg_id: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct GenerateOk {
+    msg_id: usize,
+    in_reply_to: usize,
+    id: u128,
 }
 
 mod tests {
