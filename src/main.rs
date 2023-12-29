@@ -39,11 +39,13 @@ struct Node {
     ids: HashSet<String>,
     msg_id: usize,
     uuid: Uuid,
+    messages: Vec<usize>,
+    neighbors: Vec<String>,
 }
 
 impl Node {
     fn init(id: String, ids: HashSet<String>) -> Node {
-        Node { id, ids, msg_id: 0, uuid: Uuid::new_v4() }
+        Node { id, ids, msg_id: 0, uuid: Uuid::new_v4(), messages: Vec::default(), neighbors: Vec::default() }
     }
 
     fn handle(&mut self, msg: &Msg) {
@@ -82,6 +84,58 @@ impl Node {
                 }.write();
             }
             MsgBody::GenerateOk(_) => {}
+            MsgBody::Broadcast(body) => {
+                let message = body.message.clone();
+                if !self.messages.contains(&message) {
+                    self.messages.push(message);
+                    for i in 0..self.neighbors.len() {
+                        let neighbor = self.neighbors.get(i).unwrap();
+                        Msg {
+                            src: self.id.clone(),
+                            dest: neighbor.clone(),
+                            body: MsgBody::Broadcast(Broadcast {
+                                msg_id: self.get_msg_id(),
+                                message,
+                            }),
+                        }.write();
+                    }
+                }
+                Msg {
+                    src: self.id.clone(),
+                    dest: msg.src.clone(),
+                    body: MsgBody::BroadcastOk(BroadcastOk {
+                        msg_id: self.get_msg_id(),
+                        in_reply_to: body.msg_id,
+                    }),
+                }.write();
+            }
+            MsgBody::BroadcastOk(_) => {}
+            MsgBody::Read(body) => {
+                Msg {
+                    src: self.id.clone(),
+                    dest: msg.src.clone(),
+                    body: MsgBody::ReadOk(ReadOk {
+                        msg_id: self.get_msg_id(),
+                        in_reply_to: body.msg_id,
+                        messages: self.messages.clone(),
+                    }),
+                }.write();
+            }
+            MsgBody::ReadOk(_) => {}
+            MsgBody::Topology(body) => {
+                if let Some(neighbors) = body.topology.get(&self.id) {
+                    self.neighbors = neighbors.clone();
+                }
+                Msg {
+                    src: self.id.clone(),
+                    dest: msg.src.clone(),
+                    body: MsgBody::TopologyOk(TopologyOk {
+                        msg_id: self.get_msg_id(),
+                        in_reply_to: body.msg_id,
+                    }),
+                }.write();
+            }
+            MsgBody::TopologyOk(_) => {}
         }
     }
 
@@ -126,6 +180,18 @@ enum MsgBody {
     Generate(Generate),
     #[serde(rename = "generate_ok")]
     GenerateOk(GenerateOk),
+    #[serde(rename = "broadcast")]
+    Broadcast(Broadcast),
+    #[serde(rename = "broadcast_ok")]
+    BroadcastOk(BroadcastOk),
+    #[serde(rename = "read")]
+    Read(Read),
+    #[serde(rename = "read_ok")]
+    ReadOk(ReadOk),
+    #[serde(rename = "topology")]
+    Topology(Topology),
+    #[serde(rename = "topology_ok")]
+    TopologyOk(TopologyOk),
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
@@ -165,6 +231,43 @@ struct GenerateOk {
     msg_id: usize,
     in_reply_to: usize,
     id: u128,
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct Broadcast {
+    msg_id: usize,
+    message: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct BroadcastOk {
+    msg_id: usize,
+    in_reply_to: usize,
+}
+
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct Read {
+    msg_id: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct ReadOk {
+    msg_id: usize,
+    in_reply_to: usize,
+    messages: Vec<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct Topology {
+    msg_id: usize,
+    topology: HashMap<String, Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct TopologyOk {
+    msg_id: usize,
+    in_reply_to: usize,
 }
 
 mod tests {
