@@ -41,11 +41,12 @@ struct Node {
     uuid: Uuid,
     messages: Vec<usize>,
     neighbors: Vec<String>,
+    counter: usize,
 }
 
 impl Node {
     fn init(id: String, ids: HashSet<String>) -> Node {
-        Node { id, ids, msg_id: 0, uuid: Uuid::new_v4(), messages: Vec::default(), neighbors: Vec::default() }
+        Node { id, ids, msg_id: 0, uuid: Uuid::new_v4(), messages: Vec::default(), neighbors: Vec::default(), counter: 0 }
     }
 
     fn handle(&mut self, msg: &Msg) {
@@ -118,6 +119,7 @@ impl Node {
                         msg_id: self.get_msg_id(),
                         in_reply_to: body.msg_id,
                         messages: self.messages.clone(),
+                        value: self.counter,
                     }),
                 }.write();
             }
@@ -136,6 +138,18 @@ impl Node {
                 }.write();
             }
             MsgBody::TopologyOk(_) => {}
+            MsgBody::Add(body) => {
+                self.counter += body.delta;
+                Msg {
+                    src: self.id.clone(),
+                    dest: msg.src.clone(),
+                    body: MsgBody::AddOk(AddOk {
+                        msg_id: self.get_msg_id(),
+                        in_reply_to: body.msg_id,
+                    }),
+                }.write();
+            }
+            MsgBody::AddOk(_) => {}
         }
     }
 
@@ -192,6 +206,10 @@ enum MsgBody {
     Topology(Topology),
     #[serde(rename = "topology_ok")]
     TopologyOk(TopologyOk),
+    #[serde(rename = "add")]
+    Add(Add),
+    #[serde(rename = "add_ok")]
+    AddOk(AddOk),
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
@@ -255,7 +273,16 @@ struct Read {
 struct ReadOk {
     msg_id: usize,
     in_reply_to: usize,
+    // used in broadcast
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     messages: Vec<usize>,
+    // used in add
+    #[serde(skip_serializing_if = "is_zero")]
+    value: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
@@ -266,6 +293,18 @@ struct Topology {
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 struct TopologyOk {
+    msg_id: usize,
+    in_reply_to: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct Add {
+    msg_id: usize,
+    delta: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+struct AddOk {
     msg_id: usize,
     in_reply_to: usize,
 }
